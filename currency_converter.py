@@ -19,8 +19,14 @@ class CurrencyConverterApp:
         self.api = CurrencyAPI()
         self.history_manager = HistoryManager()
         
-        # Получение списка валют
-        self.currencies = self.api.get_supported_currencies()
+        # Получение списка валют с обработкой ошибок
+        try:
+            self.currencies = self.api.get_supported_currencies()
+            if not self.currencies:
+                self.currencies = ["USD", "EUR", "RUB", "GBP", "JPY", "CNY", "KZT", "UAH"]
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось получить список валют.\nИспользуются стандартные валюты.\nОшибка: {e}")
+            self.currencies = ["USD", "EUR", "RUB", "GBP", "JPY", "CNY", "KZT", "UAH"]
         
         # Создание интерфейса
         self.create_widgets()
@@ -119,21 +125,20 @@ class CurrencyConverterApp:
         
         if amount_str == "":
             self.error_label.config(text="")
-            return
+            return True
         
+        # Разрешаем только числа и точку
         try:
             amount = float(amount_str)
             if amount <= 0:
-                self.error_label.config(text="Сумма должна быть положительным числом!")
+                self.error_label.config(text="⚠️ Сумма должна быть положительным числом!")
                 return False
             else:
-                self.error_label.config(text="")
+                self.error_label.config(text="✓ Валидная сумма", fg="green")
                 return True
         except ValueError:
-            self.error_label.config(text="Введите корректное число!")
+            self.error_label.config(text="❌ Введите корректное число (например: 100.50)", fg="red")
             return False
-        
-        return True
     
     def convert(self):
         """Выполняет конвертацию валют"""
@@ -149,7 +154,7 @@ class CurrencyConverterApp:
                 messagebox.showwarning("Предупреждение", "Сумма должна быть положительным числом")
                 return
         except ValueError:
-            messagebox.showwarning("Предупреждение", "Введите корректное число")
+            messagebox.showwarning("Предупреждение", "Введите корректное число (используйте точку как разделитель)")
             return
         
         # Получаем выбранные валюты
@@ -157,22 +162,33 @@ class CurrencyConverterApp:
         to_curr = self.to_currency.get()
         
         if not from_curr or not to_curr:
-            messagebox.showwarning("Предупреждение", "Выберите валюты")
+            messagebox.showwarning("Предупреждение", "Выберите валюты из списка")
             return
         
-        # Получаем курс
-        rate = self.api.get_exchange_rate(from_curr, to_curr)
+        # Индикатор загрузки
+        self.convert_btn.config(state="disabled", text="⏳ Загрузка...")
+        self.root.update()
+        
+        # Получаем курс с обработкой ошибок
+        try:
+            rate = self.api.get_exchange_rate(from_curr, to_curr)
+        except Exception as e:
+            self.convert_btn.config(state="normal", text="🔄 Конвертировать")
+            messagebox.showerror("Ошибка API", f"Не удалось подключиться к серверу курсов.\n\nПроверьте интернет-соединение.\n\nДетали: {e}")
+            return
+        
+        self.convert_btn.config(state="normal", text="🔄 Конвертировать")
         
         if rate is None:
-            messagebox.showerror("Ошибка", f"Не удалось получить курс {from_curr} → {to_curr}")
+            messagebox.showerror("Ошибка", f"Не удалось получить курс {from_curr} → {to_curr}\n\nВозможные причины:\n• Валюта не поддерживается\n• API временно недоступен")
             return
         
         # Вычисляем результат
         result = amount * rate
         
         # Обновляем интерфейс
-        self.result_label.config(text=f"{amount:.2f} {from_curr} = {result:.2f} {to_curr}")
-        self.rate_label.config(text=f"Курс: 1 {from_curr} = {rate:.4f} {to_curr}")
+        self.result_label.config(text=f"💰 {amount:.2f} {from_curr} = {result:.2f} {to_curr}")
+        self.rate_label.config(text=f"📊 Курс: 1 {from_curr} = {rate:.4f} {to_curr}")
         
         # Сохраняем в историю
         self.history_manager.add_record(from_curr, to_curr, amount, result, rate)
@@ -202,4 +218,4 @@ class CurrencyConverterApp:
         if messagebox.askyesno("Подтверждение", "Вы уверены, что хотите очистить всю историю?"):
             self.history_manager.clear_history()
             self.refresh_history_table()
-            messagebox.showinfo("Успех", "История очищена")
+            messagebox.showinfo("Успех", "История конвертаций очищена")
